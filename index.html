@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://cdn.jsdelivr.net/npm/idb@7/build/umd.js"></script>
+  <title>IDB</title>
+  <script>
+    // db
+    let db;
+
+    function addNote(e) {
+      console.log("Save!", db);
+      const titleEle = document.getElementById('title');
+      const descEle = document.getElementById('desc');
+      const title = titleEle.value;
+      const desc = descEle.value;
+      storeNote(title, desc).then(res => {
+        displayToast("Successfully added note!");
+        titleEle.value = '';
+        descEle.value = '';
+      })
+    }
+
+    async function storeNote(title, desc) {
+      return db.add('notes', { title, desc, date: Date.now() })
+    }
+
+    async function deleteNote(id) {
+      db.delete('notes', id).then(res => {
+        displayToast('Successfully deleted Note!');
+        document.getElementById('note_' + id).remove();
+      })
+    }
+
+    async function viewAllNotes() {
+      let allNotes = await db.getAll('notes');
+      const noteEle = document.getElementById('new-note');
+      noteEle.style.display = 'none';
+
+      const notesListEle = document.getElementById('history');
+      notesListEle.style.display = 'grid';
+
+      const titleEle = document.createElement('h2');
+      titleEle.innerText = 'Your Notes';
+      titleEle.style.margin = '10px 0';
+      notesListEle.appendChild(titleEle);
+
+      const closeXele = document.createElement('div');
+      closeXele.innerText = 'X';
+      closeXele.classList.add('closeBtn');
+      closeXele.addEventListener('click', closeHistory);
+      notesListEle.appendChild(closeXele);
+
+      allNotes.forEach(note => {
+        const divEle = document.createElement('div');
+        divEle.setAttribute('id', 'note_' + note.id);
+        divEle.classList.add('note');
+        const noteEle = document.createElement('p');
+        noteEle.classList.add('title');
+        noteEle.innerText = note.title || `Note on ${new Date(1686988268247).toLocaleDateString()}`;
+        divEle.appendChild(noteEle);
+
+        const descEle = document.createElement('p');
+        descEle.classList.add('description');
+        descEle.innerText = note.desc;
+        divEle.appendChild(descEle);
+
+        const btnEle = document.createElement('button');
+        btnEle.innerText = 'Delete';
+        btnEle.addEventListener('click', () => deleteNote(note.id));
+        divEle.appendChild(btnEle);
+        notesListEle.appendChild(divEle)
+      })
+    }
+
+    async function closeHistory() {
+      const notesListEle = document.getElementById('history');
+      notesListEle.style.display = 'none';
+
+      const noteEle = document.getElementById('new-note');
+      noteEle.style.display = 'grid';
+      notesListEle.innerHTML = '';
+
+    }
+
+    function displayToast(msg) {
+      const toastEle = document.getElementById('toast');
+      toastEle.innerText = msg;
+      toastEle.classList.toggle('close');
+      setTimeout(() => {
+        toastEle.innerText = "";
+        toastEle.classList.toggle('close');
+      }, 2000);
+    }
+  </script>
+  <script type="module">
+    import { openDB, deleteDB, wrap, unwrap } from 'https://cdn.jsdelivr.net/npm/idb@7/+esm';
+
+    window.addEventListener('load', async () => {
+      console.log("loaded")
+      db = await openDB('NoteDB', 1, {
+        upgrade(db) {
+          db.createObjectStore('notes', { keyPath: 'id', autoIncrement: true });
+        }
+      })
+    });
+  </script>
+  <script type="module">
+    import { openDB, deleteDB, wrap, unwrap } from 'https://cdn.jsdelivr.net/npm/idb@7/+esm';
+    const dbPromise = openDB('keyval-store', 1, {
+      upgrade(db) {
+        db.createObjectStore('keyval');
+      },
+    });
+
+    export async function get(key) {
+      return (await dbPromise).get('keyval', key);
+    }
+    export async function set(key, val) {
+      return (await dbPromise).put('keyval', val, key);
+    }
+    export async function del(key) {
+      return (await dbPromise).delete('keyval', key);
+    }
+    export async function clear() {
+      return (await dbPromise).clear('keyval');
+    }
+    export async function keys() {
+      return (await dbPromise).getAllKeys('keyval');
+    }
+
+    async function demo() {
+      const db = await openDB('Articles', 1, {
+        upgrade(db) {
+          // Create a store of objects
+          const store = db.createObjectStore('articles', {
+            // The 'id' property of the object will be the key.
+            keyPath: 'id',
+            // If it isn't explicitly set, create a value by auto incrementing.
+            autoIncrement: true,
+          });
+          // Create an index on the 'date' property of the objects.
+          store.createIndex('date', 'date');
+        },
+      });
+
+      // Add an article:
+      await db.add('articles', {
+        title: 'Article 1',
+        date: new Date('2019-01-01'),
+        body: '…',
+      });
+
+      // Add multiple articles in one transaction:
+      {
+        const tx = db.transaction('articles', 'readwrite');
+        await Promise.all([
+          tx.store.add({
+            title: 'Article 2',
+            date: new Date('2019-01-01'),
+            body: '…',
+          }),
+          tx.store.add({
+            title: 'Article 3',
+            date: new Date('2019-01-02'),
+            body: '…',
+          }),
+          tx.done,
+        ]);
+      }
+
+      // Get all the articles in date order:
+      console.log(await db.getAllFromIndex('articles', 'date'));
+
+      // Add 'And, happy new year!' to all articles on 2019 - 01 - 01:
+      {
+        const tx = db.transaction('articles', 'readwrite');
+        const index = tx.store.index('date');
+
+        for await (const cursor of index.iterate(new Date('2019-01-01'))) {
+          const article = { ...cursor.value };
+          article.body += ' And, happy new year!';
+          cursor.update(article);
+        }
+
+        await tx.done;
+      }
+    }
+
+    // demo();
+
+    async function demo2() {
+      const db = await openDB('Demo2', 1, {
+        upgrade(db) {
+          db.createObjectStore('users', { keyPath: 'userId', autoIncrement: true });
+        }
+      })
+
+      // await db.add('users', { name: 'user1', class: 'V', batch: 'a' });
+      // await db.add('users', { name: 'user2', class: 'V', batch: 'b' });
+
+      // const users = await db.getAllKeys('users');
+      // console.log("users", users);
+
+      // console.log("First id", db.get('users', 1).then(res => console.log("res", res)));
+      // await db.put('users', { name: 'user4', class: 'V', batch: 'b', userId: 4 });
+
+      db.close();
+    }
+
+    // demo2();
+  </script>
+</head>
+
+<body style="height: 98vh; margin: 16px;background: steelblue;color: #fff;">
+  <header>
+    <h2>Notes IndexDB</h2>
+    <div><button style="width: 86px; background-color: teal;color: #fff;font-size: 18px;font-weight: 600;"
+        onclick="viewAllNotes();">History</button></div>
+  </header>
+  <div style="display: grid; grid-gap: 10px; margin: 40px auto;width: 60%;" id="new-note">
+    <p style="font-size: 18px; font-weight: 600;text-align: center; margin: 5px 0;">New Note</p>
+    <input placeholder="Title" id="title" />
+    <textarea placeholder="Description" rows="10" id="desc"></textarea>
+    <button onclick="addNote();">Save</button>
+  </div>
+  <div style="display: none; grid-gap: 10px; margin-top: 10px; width: 80%;" id="history">
+  </div>
+  <div id="toast" class="toast close"></div>
+</body>
+
+<style>
+  header {
+    padding-bottom: 10px;
+    border-bottom: 2px solid silver;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    &h2 {
+      padding: 10px;
+      margin: 0;
+    }
+  }
+
+  .note {
+    padding: 10px 10px;
+    margin: 0;
+    border-bottom: 1px solid silver;
+    background-color: aliceblue;
+
+    &:last-child {
+      border-bottom: none;
+      margin-bottom: 20px;
+    }
+  }
+
+  .title {
+    font-size: 18px;
+    font-weight: 600;
+    color: darkred;
+    margin: 0 0 10px 0px;
+  }
+
+  .description {
+    font-size: 14px;
+    color: darkblue;
+    margin: 0 0 10px 0px;
+  }
+
+  .closeBtn {
+    color: red;
+    font-size: 20px;
+    position: absolute;
+    right: 30px;
+    border-radius: 5px;
+    border: 1px solid;
+    padding: 5px;
+    background-color: #fff;
+  }
+
+  .toast {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background-color: rgba(0, 0, 0, 0.6);
+    color: #fff;
+    padding: 10px;
+    border-radius: 6px;
+    text-align: center;
+
+    &.close {
+      display: none;
+    }
+  }
+</style>
+
+</html>
